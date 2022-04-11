@@ -248,23 +248,69 @@ int emit_a64_add_sub_ext(mambo_context *ctx, int rd, int rn, int rm, int ext_opt
 #endif
 
 #ifdef __riscv
-  void emit_riscv_push(mambo_context *ctx, uint32_t regs) {
-    int reg_no = count_bits(regs);
-    ctx->code.plugin_pushed_reg_count += reg_no;
+void emit_riscv_push(mambo_context *ctx, uint32_t regs) {
+  int reg_no = count_bits(regs);
+  ctx->code.plugin_pushed_reg_count += reg_no;
 
-    uint16_t *write_p = ctx->code.write_p;
-    riscv_push(&write_p, regs);
-    ctx->code.write_p = write_p;
+  uint16_t *write_p = ctx->code.write_p;
+  riscv_push(&write_p, regs);
+  ctx->code.write_p = write_p;
+}
+
+void emit_riscv_pop(mambo_context *ctx, uint32_t regs) {
+  ctx->code.plugin_pushed_reg_count -= count_bits(regs);
+  assert(ctx->code.plugin_pushed_reg_count >= 0);
+
+  uint16_t *write_p = ctx->code.write_p;
+  riscv_pop(&write_p, regs);
+  ctx->code.write_p = write_p;
+}
+
+static inline int emit_riscv_add_sub_shift(mambo_context *ctx, int rd, int rs1, int rs2, 
+                                           unsigned int shift_type, unsigned int shamt) {
+  bool sub = (rs2 < 0);
+  rs2 = abs(rs2);
+
+  if ((unsigned int)rd > 31 || (unsigned int)rs1 > 31 || (unsigned int)rs2 > 31)
+    return 1;
+  
+  // Add shift instruction to emulate ARMs ADD/SUB (shifted register) instructions
+#if __riscv_xlen == 32
+  #define RV_SHAMT_MAX 31
+#elif __riscv_xlen == 64
+  #define RV_SHAMT_MAX 63
+#elif __riscv_xlen == 128
+  #define RV_SHAMT_MAX 127
+#endif
+  if (shamt > RV_SHAMT_MAX || shift_type > ASR) 
+    return -1;
+  if (shamt > 0) {
+    switch(shift_type) {
+    case LSL:
+      // slli rs2, rs2, shamt
+      emit_riscv_slli(ctx, rs2, rs2, shamt);
+      break;
+    case LSR:
+      // srli rs2, rs2, shamt
+      emit_riscv_srli(ctx, rs2, rs2, shamt);
+      break;
+    case ASR:
+      // srai rs2, rs2, shamt
+      emit_riscv_srai(ctx, rs2, rs2, shamt);
+      break;
+    }
   }
 
-  void emit_riscv_pop(mambo_context *ctx, uint32_t regs) {
-    ctx->code.plugin_pushed_reg_count -= count_bits(regs);
-    assert(ctx->code.plugin_pushed_reg_count >= 0);
-
-    uint16_t *write_p = ctx->code.write_p;
-    riscv_pop(&write_p, regs);
-    ctx->code.write_p = write_p;
+  if (sub) {
+    // sub rd, rs1, rs2
+    emit_riscv_sub(ctx, rd, rs1, rs2);
+  } else {
+    // add rd, rs1, rs2
+    emit_riscv_add(ctx, rd, rs1, rs2);
   }
+
+  return 0;
+}
 #endif
 
 void emit_push(mambo_context *ctx, uint32_t regs) {
@@ -524,7 +570,7 @@ int emit_add_sub_i(mambo_context *ctx, int rd, int rn, int offset) {
       }
     }
   #elif  defined __riscv
-    if (offset > 0x7FF || offset < -0xFFF) return -1;
+    if (offset > 0x7FF || offset < -0x800) return -1;
     emit_riscv_addi(ctx, rd, rn, offset);
   #endif
   }
@@ -541,6 +587,8 @@ inline int emit_add_sub_shift(mambo_context *ctx, int rd, int rn, int rm,
   }
 #elif __aarch64__
   return emit_a64_add_sub_shift(ctx, rd, rn, rm, shift_type, shift);
+#elif __riscv
+  return emit_riscv_add_sub_shift(ctx, rd, rn, rm, shift_type, shift);
 #endif
 }
 
