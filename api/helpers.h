@@ -37,6 +37,12 @@ typedef struct {
   #define MAX_FCALL_ARGS 8
 #endif
 
+#ifdef __riscv
+  #define PARAM_REGS_OFFSET 10
+#else
+  #define PARAM_REGS_OFFSET 0
+#endif
+
 void emit_counter64_incr(mambo_context *ctx, void *counter, unsigned incr);
 void emit_push(mambo_context *ctx, uint32_t regs);
 void emit_pop(mambo_context *ctx, uint32_t regs);

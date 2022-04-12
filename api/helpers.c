@@ -449,21 +449,17 @@ int emit_safe_fcall(mambo_context *ctx, void *function_ptr, int argno) {
 #elif __aarch64__
   to_push |= 0x1FF;
 #elif __riscv
-  to_push |= 0x3FC00;
+  to_push |= 0x7FC00; // a0 - a7, s2;
 #endif
 
   if (argno > MAX_FCALL_ARGS) return -1;
-#if defined __arm__ || __aarch64__
-  to_push &= ~(((1 << MAX_FCALL_ARGS)-1) >> (MAX_FCALL_ARGS - argno));
-#elif __riscv
-  to_push &= ~(((1 << 18)-1) >> (MAX_FCALL_ARGS - argno));
-#endif
+  to_push &= ~(((1 << MAX_FCALL_ARGS + PARAM_REGS_OFFSET)-1) >> (MAX_FCALL_ARGS - argno));
 
   emit_push(ctx, to_push);
 #if defined __arm__ || __aarch64__
   emit_set_reg_ptr(ctx, MAX_FCALL_ARGS, function_ptr);
 #else
-  emit_set_reg_ptr(ctx, a7, function_ptr);
+  emit_set_reg_ptr(ctx, s2, function_ptr);
 #endif
   emit_fcall(ctx, safe_fcall_trampoline);
   emit_pop(ctx, to_push);
@@ -477,12 +473,12 @@ int emit_safe_fcall_static_args(mambo_context *ctx, void *fptr, int argno, ...) 
 
   if (argno > MAX_FCALL_ARGS || argno < 0) return -1;
   if (argno > 0) {
-    reglist = 0xFF >> (8-argno);
+        reglist = 0xFF >> (8-argno) << PARAM_REGS_OFFSET;
     emit_push(ctx, reglist);
 
     va_start(args, argno);
     for (int a = 0; a < argno; a++) {
-      emit_set_reg(ctx, a, va_arg(args, uintptr_t));
+      emit_set_reg(ctx, a + PARAM_REGS_OFFSET, va_arg(args, uintptr_t));
     }
     va_end(args);
   }
@@ -838,7 +834,8 @@ int emit_indirect_branch_by_spc(mambo_context *ctx, enum reg reg) {
       assert(0);
   }
 #elif __riscv
-  #warning no riscv implementation
+  // Uses fragment id 0 to prevent the dispatcher from attempting linking on an IHL miss
+  riscv_inline_hash_lookup(current_thread, (uint16_t **)&ctx->code.write_p, 0, zero, reg, 0, (uintptr_t)ctx->code.read_address + mambo_get_inst_len(ctx));
 #endif
 }
 #endif
