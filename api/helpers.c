@@ -361,12 +361,16 @@ void emit_set_reg(mambo_context *ctx, enum reg reg, uintptr_t value) {
 
 int __emit_branch_cond(inst_set inst_type, void *write, uintptr_t target, mambo_cond cond, bool link) {
   intptr_t diff;
-  #ifdef __arm__
-    diff = (target & (~THUMB)) - (uintptr_t)write;
-  #else
-    diff = target - (uintptr_t)write;
-  #endif
+#ifdef __arm__
+  diff = (target & (~THUMB)) - (uintptr_t)write;
+#else
+  diff = target - (uintptr_t)write;
+#endif
+#ifdef __riscv
+  if (cond.cond_code != AL && link) return -1;
+#else
   if (cond != AL && link) return -1;
+#endif
 #ifdef __arm__
   switch (inst_type) {
     case THUMB_INST:
@@ -404,20 +408,24 @@ int __emit_branch_cond(inst_set inst_type, void *write, uintptr_t target, mambo_
   }
 #endif
 #ifdef __riscv
-  //TODO: refactor to support RISC-V conditional branches
-  if (cond == AL) {
-    if (diff < -1048576 || diff > 1048574) return -1;
-    riscv_jal_helper(write, target, ra);
+  if (cond.cond_code == AL) {
+    return riscv_jal_helper(write, target, link);
   } else {
-    return -1;
+    // After checked for `AL`, cond.cond_code is fully compatible to branch_condition
+    return riscv_branch_helper(write, target, cond.r1, cond.r2, (enum branch_condition)cond.cond_code);
   }
 #endif
   return 0;
 }
 
 void emit_fcall(mambo_context *ctx, void *function_ptr) {
+#ifdef __riscv
+  mambo_cond cond = {0, 0, AL};
+#else
+  mambo_cond cond = AL;
+#endif
   // First try an immediate call, and if that is out of range then generate an indirect call
-  int ret = __emit_branch_cond(ctx->code.inst_type, ctx->code.write_p, (uintptr_t)function_ptr, AL, true);
+  int ret = __emit_branch_cond(ctx->code.inst_type, ctx->code.write_p, (uintptr_t)function_ptr, cond, true);
   if (ret == 0) return;
   emit_set_reg(ctx, lr, (uintptr_t)function_ptr);
 #ifdef __arm__
@@ -606,7 +614,12 @@ int emit_branch_cond(mambo_context *ctx, void *target, mambo_cond cond) {
 }
 
 int emit_branch(mambo_context *ctx, void *target) {
-  return emit_branch_cond(ctx, target, AL);
+#ifdef __riscv
+  mambo_cond cond = {0, 0, AL};
+#else
+  mambo_cond cond = AL;
+#endif
+  return emit_branch_cond(ctx, target, cond);
 }
 
 int __emit_branch_cbz_cbnz(mambo_context *ctx, void *write_p, void *target, enum reg reg, bool is_cbz) {
@@ -617,6 +630,11 @@ int __emit_branch_cbz_cbnz(mambo_context *ctx, void *write_p, void *target, enum
   if (mambo_get_inst_type(ctx) == THUMB_INST) {
     ret = thumb_cbz_cbnz_helper((uint16_t *)write_p, (uint32_t)target, reg, is_cbz);
   }
+#elif __riscv
+  mambo_cond cond = {reg, x0, NE};
+  if (is_cbz)
+    cond.cond_code = EQ;
+  ret = emit_branch_cond(ctx, target, cond);
 #endif
   return ret;
 }
@@ -626,7 +644,7 @@ int emit_branch_cbz_cbnz(mambo_context *ctx, void *target, enum reg reg, bool is
 
   int ret = __emit_branch_cbz_cbnz(ctx, write_p, target, reg, is_cbz);
   if (ret == 0) {
-#ifdef __aarch64__
+#ifdef __aarch64__ || __riscv
     mambo_set_cc_addr(ctx, write_p + 4);
 #elif __arm__
     mambo_set_cc_addr(ctx, write_p + 2);
@@ -681,11 +699,21 @@ int emit_local_branch_cond(mambo_context *ctx, mambo_branch *br, mambo_cond cond
 }
 
 int emit_local_branch(mambo_context *ctx, mambo_branch *br) {
-  return __emit_local_branch(ctx, br, AL, false);
+#ifdef __riscv
+  mambo_cond cond = {0, 0, AL};
+#else
+  mambo_cond cond = AL;
+#endif
+  return __emit_local_branch(ctx, br, cond, false);
 }
 
 int emit_local_fcall(mambo_context *ctx, mambo_branch *br) {
-  return __emit_local_branch(ctx, br, AL, true);
+#ifdef __riscv
+  mambo_cond cond = {0, 0, AL};
+#else
+  mambo_cond cond = AL;
+#endif
+  return __emit_local_branch(ctx, br, cond, true);
 }
 
 int emit_local_branch_cbz_cbnz(mambo_context *ctx, mambo_branch *br, enum reg reg, bool is_cbz) {

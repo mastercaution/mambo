@@ -387,8 +387,23 @@ extern enum arm_cond_codes arm_inverse_cond_code[];
 #define invert_cond(cond) ((cond) ^ 1)
 
 #if defined(__riscv)
-typedef enum riscv_cond_codes {
-  AL = 0,
+enum riscv_cond_codes {
+  AL  = 2, // Always branch/No condition
+  EQ  = 0, // Equal                       (compatible to branch_condition)
+  NE  = 1, // NOT equal                   (compatible to branch_condition)
+  LT  = 4, // Lower than                  (compatible to branch_condition)
+  GE  = 5, // Greater or equal            (compatible to branch_condition)
+  LTU = 6, // Lower than unsigned         (compatible to branch_condition)
+  GEU = 7, // Greater or equal unsinged   (compatible to branch_condition)
+};
+
+/**
+ * RISC-V conditions.
+ */
+typedef struct {
+  enum reg r1;                // Register 1 to compare with register 2.
+  enum reg r2;                // Register 2 to compare with register 1.
+  enum riscv_cond_codes cond_code; // Condition for branching.
 } mambo_cond;
 #endif
 
