@@ -338,7 +338,8 @@ enum branch_condition {
 };
 #endif
 
-enum reg_portable { // TODO:(riscv) see how these would map to riscv
+#if defined(__arm__) || defined(__aarch64__)
+enum reg_portable {
   reg0 = 0,
   reg1 = 1,
   reg2 = 2,
@@ -354,7 +355,6 @@ enum reg_portable { // TODO:(riscv) see how these would map to riscv
   reg12 = 12
 };
 
-#if defined(__arm__) || defined(__aarch64__)
 typedef enum arm_cond_codes {
   EQ = 0,
   NE = 1,
@@ -387,6 +387,22 @@ extern enum arm_cond_codes arm_inverse_cond_code[];
 #define invert_cond(cond) ((cond) ^ 1)
 
 #if defined(__riscv)
+enum reg_portable {
+  reg0 = a0,
+  reg1 = a1,
+  reg2 = a2,
+  reg3 = a3,
+  reg4 = a4,
+  reg5 = a5,
+  reg6 = a6,
+  reg7 = a7,
+  reg8 = s2,
+  reg9 = s3,
+  reg10 = s4,
+  reg11 = s5,
+  reg12 = s6,
+};
+
 enum riscv_cond_codes {
   AL  = 2, // Always branch/No condition
   EQ  = 0, // Equal                       (compatible to branch_condition)
