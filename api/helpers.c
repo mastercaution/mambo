@@ -506,6 +506,12 @@ void emit_mov(mambo_context *ctx, enum reg rd, enum reg rn) {
   } else {
     emit_a64_logical_reg(ctx, 1, 1, 0, 0, rn, 0, 0x1F, rd);
   }
+#elif __riscv
+  #ifdef __riscv_compressed
+  emit_riscv_c_mv(ctx, rd, rn);
+  #else
+  emit_riscv_add(ctx, rd, zero, rn);
+  #endif
 #endif
 }
 
